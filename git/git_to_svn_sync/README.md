@@ -1,0 +1,40 @@
+We have already existing git repo and want to put it to svn, and sync after each commit/push.
+
+repo name       : repo1
+git user        : git
+git repo dir    : /home/git/repositories
+svn repo dir    : /home/svn/repositories
+
+note: below example assumes that git and svn repo are on the same server, if not, please use appropriate protocol scheme e.g. git@... https://...
+
+Ok, create svn repo first, as root:
+    # cd /home/svn/repositories/
+    # svnadmin create repo1
+    # chown -R git repo1
+
+next, as git user:
+    $ cd 
+    $ mkdir -p tmp/git_svn_sync
+    $ cd tmp/git_svn_sync
+    $ git clone file:///home/git/repositories/repo1.git
+    $ cd repo1
+    $ rm -rf .git
+    $ svn import . file:///home/svn/repositories/repo1 -m "init commit"
+    $ cd ..
+    $ rm -rf repo1
+    $ git svn clone file:///home/svn/repositories/repo1
+    $ cd repo1
+    $ git remote add origin file:///home/git/repositories/repo1.git/
+
+now, after some commits, to sync them to svn, as git user:
+    $ cd
+    $ cd tmp/git_svn_sync/repo1
+    $ git pull --no-commit origin master
+    $ git commit -m "sync commit"
+    $ git svn dcommit
+
+To automate sync process, add post-receive hook to /home/git/repositories/repo1.git/hooks/
+Sync logs will be available in /home/git/tmp/git_svn_sync/repo1.sync.log
+If something goes wrong during the push (e.g. due to some conflict), such warning message will be printed:
+  remote: WARNING! Problem occured during git->svn synchronization.
+  remote: Please contact with git/svn administrator.

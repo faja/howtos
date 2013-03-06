@@ -1,0 +1,21 @@
+#!/usr/bin/env ruby
+
+sync_dir='/home/git/tmp/git_svn_sync'
+repo='repo1'
+
+$stdin.each do |line|
+        oldrev, newrev, ref = line.split
+        if ref == "refs/heads/master"
+                # sync svn repo
+                message = "sync from git:\n"+`git log --pretty=format:"sha1: %h - author: %an - comment: %s" --no-merges #{oldrev}..#{newrev}`
+                status=[]
+                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git pull --no-commit origin master >> #{sync_dir}/#{repo}.sync.log 2>&1`
+                        status << 1 if $?.exitstatus != 0
+                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git commit -m "#{message}" >> #{sync_dir}/#{repo}.sync.log 2>&1`
+                        status << 1 if $?.exitstatus != 0
+                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git svn dcommit >> #{sync_dir}/#{repo}.sync.log 2>&1`
+                        status << 1 if $?.exitstatus != 0
+                puts "\n\nWARNING! Problem occured during git->svn synchronization.\nPlease contact your git/svn administrator.\n\n\n" if status.include?(1)
+        end
+        # do something more if you want
+end
