@@ -11,7 +11,7 @@ $stdin.each do |line|
                 status=[]
                 `cd #{sync_dir}/#{repo}; unset GIT_DIR; git pull --no-commit origin master >> #{sync_dir}/#{repo}.sync.log 2>&1`
                         status << 1 if $?.exitstatus != 0
-                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git commit -m "#{message}" >> #{sync_dir}/#{repo}.sync.log 2>&1`
+                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git commit -a -m "#{message}" >> #{sync_dir}/#{repo}.sync.log 2>&1`
                         status << 1 if $?.exitstatus != 0
                 `cd #{sync_dir}/#{repo}; unset GIT_DIR; git svn dcommit >> #{sync_dir}/#{repo}.sync.log 2>&1`
                         status << 1 if $?.exitstatus != 0
