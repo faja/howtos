@@ -9,7 +9,7 @@ $stdin.each do |line|
                 # sync svn repo
                 message = "sync from git:\n"+`git log --pretty=format:"sha1: %h - author: %an - comment: %s" --no-merges #{oldrev}..#{newrev}`
                 status=[]
-                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git pull --no-commit origin master >> #{sync_dir}/#{repo}.sync.log 2>&1`
+                `cd #{sync_dir}/#{repo}; unset GIT_DIR; git pull -Xtheirs --no-commit origin master >> #{sync_dir}/#{repo}.sync.log 2>&1`
                         status << 1 if $?.exitstatus != 0
                 `cd #{sync_dir}/#{repo}; unset GIT_DIR; git commit -a -m "#{message}" >> #{sync_dir}/#{repo}.sync.log 2>&1`
                         status << 1 if $?.exitstatus != 0
