@@ -37,6 +37,11 @@ next, as git user:
     $ git svn clone file:///home/svn/repositories/repo1
     $ cd repo1
     $ git remote add origin file:///home/git/repositories/repo1.git/
+    $ echo '[user]
+        name = git_sync
+        email = null@example.com' >> .git/config
+    $ 
+        
 ```
 now, after some commits, to sync them to svn, as git user:
 ```
