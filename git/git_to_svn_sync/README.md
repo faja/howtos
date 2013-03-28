@@ -47,7 +47,7 @@ now, after some commits, to sync them to svn, as git user:
 ```
     $ cd
     $ cd tmp/git_svn_sync/repo1
-    $ git pull --no-commit origin master
+    $ git pull -Xtheirs --no-commit origin master
     $ git commit -m "sync commit"
     $ git svn dcommit
 ```
