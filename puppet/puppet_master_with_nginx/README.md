@@ -1,31 +1,32 @@
-
+### puppet master with nginx and passenger
 OS: CentOS 6
 
-# installation
+#### installation
 
-Very first step is to build nginx with passanger support. To do this:
-* install rake, rack and passenger gems
+Very first step is to build nginx with passanger support.   
+To do this:
+* install rake, rack and passenger gems   
 ```
 # gem install rake rack passenger
 ```
-* install packages needed to build nginx with passenger support:
-# 
+* install packages needed to build nginx with passenger support   
 ```
 # yum install gcc gcc-c++ make rpm-build pcre-devel openssl-devel curl-devel pam-devel zlib-devel
 ```
-* download the freshest source rpm from: http://nginx.org/packages/rhel/6/SRPMS/
+
+* download the freshest source rpm from: http://nginx.org/packages/rhel/6/SRPMS/   
 ```
 # cd /usr/src
 # wget http://nginx.org/packages/rhel/6/SRPMS/nginx-1.4.1-1.el6.ngx.src.rpm
 ```
-* build nginx with passanger support:
+* install src.rpm
 ```
 # rpm -ivh nginx-1.4.1-1.el6.ngx.src.rpm
 # cd /root/rpmbuild/SPECS/
 # cp nginx.spec{,.back}
 ```
 
-add "--add-module=`passenger-config --root`/ext/nginx \" to './configuration' at '%build' stage
+* add ```--add-module=`passenger-config --root`/ext/nginx \``` to ```./configuration``` at ```%build``` stage   
 diff should be looks like:
 ```
 # diff nginx.spec nginx.spec.back 
@@ -34,7 +35,7 @@ diff should be looks like:
 129d127
 <               --add-module=`passenger-config --root`/ext/nginx \
 ```
-build and install nginx rpm:
+* build and install nginx rpm:
 ```
 # rpmbuild -bb nginx.spec
 # cd /root/rpmbuild/RPMS/x86_64
@@ -43,21 +44,21 @@ build and install nginx rpm:
 ```
 
 
-# configuration
-
+#### configuration
+* create rack dir and copy config.ru there
 ```
 # cd /etc/puppet && mkdir -p rack/public
 # cd rack
 # cp `rpm -ql puppet-3.1.1-1.el6.noarch |grep config.ru` .
 # chown -R puppet:puppet /etc/puppet
 ```
-common mistake is to copy config.ru to /etc/puppet/rack/public, so be sure to copy it to /etc/puppet/rack
-check passenger root, which will be used in passanger_root nginx config option
+common mistake is to copy ```config.ru``` to ```/etc/puppet/rack/public```, so be sure to copy it to ```/etc/puppet/rack```   
+
+* check passenger root, which will be used in ```passanger_root``` nginx config option
 ```
 # passenger-config --root
 ```
-
-add passenger options into nginx's http{} block:
+* add passenger options into nginx's ```http{}``` block
 ```
 http {
 ...
@@ -67,10 +68,11 @@ passenger_max_pool_size  15;
 include                  /etc/nginx/conf.d/puppet.conf;
 ...
 }
-
-add puppet.conf file
 ```
-# cat /etc/nginx/conf.d/puppet.conf
+
+* add puppet.conf file
+```
+# cat > /etc/nginx/conf.d/puppet.conf
 server {
   listen                     8140 ssl;
   server_name                puppet puppet.your.domain.com;
@@ -97,8 +99,14 @@ server {
 }
 ```
 
-# /etc/init.d/puppetmaster stop
-# chkconfig puppetmaster off
+* nginx service
+```
+ # /etc/init.d/puppetmaster stop   
+ # chkconfig puppetmaster off   
+ # chkconfig nginx on   
+ # /etc/init.d/nginx restart
+```
 
-# chkconfig nginx on
-# /etc/init.d/nginx restart
+#### test
+* run on client host ```# puppet agent --test```
+* take a look on logs
