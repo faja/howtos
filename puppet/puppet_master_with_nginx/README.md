@@ -1,6 +1,16 @@
 ### puppet master with nginx and passenger
 OS: CentOS 6
 
+
+```
+.--------.     .-------------------.
+| client |---->| NGINX + passenger |
+`--------'     |   puppet master   |
+               `-------------------'
+```
+(for more complex example take a look here: https://github.com/faja/howtos/tree/master/puppet/puppet_master_with_nginx/puppet_master_cluster_with_nginx)
+
+
 #### installation
 
 Very first step is to build nginx with passanger support.   
