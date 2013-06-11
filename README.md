@@ -1,3 +1,3 @@
 howtos
 ======
-my collection of howtos, tricks and hacks
+collection my of howtos, tricks and hacks
