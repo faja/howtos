@@ -511,6 +511,14 @@ app# pcp_node_info 10 localhost 9898 pgpool pgpool 1
 app# pcp_node_info 10 localhost 9898 pgpool pgpool 2
 ```
 
+
+### STEP 5 - TEST:)
+prepare test database
+stop server on master 
+test failover
+
+
+
 ### ABOUT FAILOVER
 If master fails, on slave1 trigger file is created, and slave1 is promoted to be new master.
 When it happend in $PGDATA/pg_xlog/ directory file TIMELINE_ID.history (eg. '00000002.history') is created.
