@@ -1,8 +1,7 @@
+####HA POSTGRES CLUSTER by STREAMING REPLICATION + PGPOOL-II
+---
 
-HA POSTGRES CLUSTER by STREAMING REPLICATION + PGPOOL-II
-
-
-OVERVIEW
+###OVERVIEW
 
 In this manual i use ubuntu 12.04, postgres-9.1 and pgpool2-3.1
 
@@ -12,8 +11,13 @@ Hosts:
  * slave2  192.168.200.4
  * app     192.168.200.5
 
+Users:
+ * postgres - system user which runs all postgresql servers and pgpool service
+ * repl - db user for replication
+ * pgpool - db user for pgpool checks
 
 
+```
   .-----.                  .--------.
   |     |           W      |   DB   |
   | APP |-----+----------->| MASTER |----.
@@ -29,10 +33,12 @@ Hosts:
               `----------->| SLAVE2 |<---`
                            |        |
                            `--------`
+```
 
 
 AFTER FAILOVER
 
+```
   .-----.                  .--------.
   |     |                  |   DB   |
   | APP |-----+----        | MASTER |
@@ -49,178 +55,255 @@ AFTER FAILOVER
                            |        |
                            `--------`
 
+```
+###STEP 1
 
--- MASTER --
+Let's start from installing postgresql server on all machines, and generate ssh keys.   
+User 'postgres' have to be able to ssh:
+* from app to slave1
+* from app to slave2
+* from slave1 to slave2
+* from master to slave1 and slave2 (optionally, to copy base_backup.tar)
+it is very important!
 
-First step is to install and configure postgresql server
+```
+master# apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
+master# /etc/init.d/postgresql stop
+master# su - postgres
+  postgres@master$ ssh-keygen -trsa -b 4096
+```
 
-  # apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
-  # /etc/init.d/postgresql stop
-  # vim /etc/postgresql/9.1/main/postgresql.conf
-    
-    ...
-    listen_addresses = '*'
-    wal_level = hot_standby
-    max_wal_senders = 2
-    wal_keep_segments = 50
-    hot_standby = on
-    archive_mode = on
-    archive_command = 'test ! -f /var/lib/postgresql/9.1/archiving_active || cp -i %p /var/lib/postgresql/9.1/archive/%f'
-    ...
+```
+slave1# apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
+slave1# /etc/init.d/postgresql stop
+slave1# su - postgres
+  postgres@slave1$ ssh-keygen -trsa -b 4096
+```
+
+```
+slave2# apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
+slave2# /etc/init.d/postgresql stop
+slave2# su - postgres
+  postgres@slave2$ ssh-keygen -trsa -b 4096
+```
+
+```
+app# apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
+app# /etc/init.d/postgresql stop
+app# su - postgres
+  postgres@app$ ssh-keygen -trsa -b 4096
+```
+
+Right now add id_rsa.pub file to ~/.ssh/authorized_keys on appropriate hosts, and test connections:
+* from master to slave1 and slave2
+ ```
+ postgres@master$ ssh slave1
+ postgres@master$ ssh slave2
+ ```
+
+* from slave1 to slave2
+ ```
+ postgres@slave1$ ssh slave2
+ ```
+
+* from app to slave1 and slave2
+ ```
+ postgres@app$ ssh slave1
+ postgres@app$ ssh slave2
+ ```
+
+
+Ok that was easy:) Let's prepare master host.
+
+###STEP 2 - MASTER
+postgresql.conf
+```
+master# vim /etc/postgresql/9.1/main/postgresql.conf
+```
+```
+  ...
+  listen_addresses = '*'
+  wal_level = hot_standby
+  max_wal_senders = 2
+  wal_keep_segments = 50
+  hot_standby = on
+  archive_mode = on
+  archive_command = 'test ! -f /var/lib/postgresql/9.1/archiving_active || cp -i %p /var/lib/postgresql/9.1/archive/%f'
+  ...
+```
 
 Next, we have to add 'repl' and 'pgpool' users in pg_hba.conf file and in postgres
-
-  # echo host replication repl 192.168.200.3/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
-  # echo host replication repl 192.168.200.4/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
-  # echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
-
-right now we can start postgresql server and add users:
-  # /etc/init.d/postgresql start
-  # su - postgres
-  $ psql
+```
+master# echo host replication repl 192.168.200.3/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+master# echo host replication repl 192.168.200.4/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+master# echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+```
+right now we can start postgresql server and add users
+```
+master# /etc/init.d/postgresql start
+master# su - postgres
+postgres@master$ psql
   postgres=# CREATE USER repl REPLICATION ENCRYPTED PASSWORD 'repl';
   postgres=# CREATE USER pgpool LOGIN ENCRYPTED PASSWORD 'pgpool';
-
-Of course you need to add user for your application, for test purpose we can add:
+```
+Of course you have to add user needed by your application as well,   
+for test purpose we can add below line to pg_hba.conf file
+```
   host all postgres 192.168.200.5/32 trust
-to pg_hba.conf file
+```
 
 Create 'base backup':
-  # su - postgres
-  $ cd /var/lib/postgresql/9.1/
-  $ mkdir archive
-  $ touch archiving_active
-  $ psql -c "select pg_start_backup('base_backup');"
-  $ tar -cvf base_backup.tar --exclude=pg_xlog --exclude=postmaster.pid main/
-  $ psql -c "select pg_stop_backup();"
-  $ tar -rf base_backup.tar archive
-if you want you can disable archiving by:
-  $ rm archiving_active
- 
-Right now we have master server up and running and base backup to restore it on slaves.
-
-Note about SSH KEYS:
-'postgres' user have to be able to ssh without password:
- * from app to slave1
- * from app to slave2
- * from slave1 to slave2
- * from master to slave1 and slave2 (optionally, to copy base_backup.tar)
-
-So very important step is generate ssh keys and add public one to appropriate authorized_keys on hosts.
-  # su - postgres
-  $ ssh-keygen -trsa -b 4096
-
-now, you can add master's id_rsa.pub to authorized_keys on slave1 and slave2, and copy there base_backup.tar
-
-
-   $ scp base_backup.tar 192.168.200.3:~
-   $ scp base_backup.tar 192.168.200.4:~
+```
+master# su - postgres
+  postgres@master$ cd /var/lib/postgresql/9.1/
+  postgres@master$ mkdir archive
+  postgres@master$ touch archiving_active
+  postgres@master$ psql -c "select pg_start_backup('base_backup');"
+  postgres@master$ tar -cvf base_backup.tar --exclude=pg_xlog --exclude=postmaster.pid main/
+  postgres@master$ psql -c "select pg_stop_backup();"
+  postgres@master$ tar -rf base_backup.tar archive
+```
+if you want you can disable archiving now
+```
+  postgres@master$ rm archiving_active
+```
+Ok so, we have master server up and running and we have base backup to restore it on slaves.
+```
+  postgres@master$ scp base_backup.tar slave1:~
+  postgres@master$ scp base_backup.tar slave2:~
+```
 
 
 
+### STEP 3 - SLAVE1
 
+postgresql.conf
+```
+slave1# vim /etc/postgresql/9.1/main/postgresql.conf
+```
+```
+  # important options
+  ...
+  listen_addresses = '*'
+  wal_level = hot_standby
+  max_wal_senders = 2
+  wal_keep_segments = 50
+  hot_standby = on
+  ...
+```
 
--- SLAVE 1 --
+add 'repl' and 'pgpool' users to pg_hba.conf file
+```
+slave1# echo host replication repl 192.168.200.4/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+slave1# echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+```
+And like on master add your app user as well.   
+For test purpose we can add below line to pg_hba.conf file:
+```
+  host all postgres 192.168.200.5/32 trust
+```
 
-1) install and configure postgresql
+Replication:
+```
+slave1# su - postgres
+  postgres@slave1$ cd /var/lib/postgresql/9.1
+  postgres@slave1$ mv ~/base_backup.tar .
+  postgres@slave1$ rm -rf main/
+  postgres@slave1$ tar -xvf base_backup.tar
+  postgres@slave1$ mkdir main/pg_xlog
+  postgres@slave1$ vim main/recovery.conf
+```
+```
+  standby_mode = 'on'
+  primary_conninfo = 'host=192.168.200.2 port=5432 user=repl password=repl'
+  restore_command = 'cp /var/lib/postgresql/9.1/archive/%f %p'
+  recovery_target_timeline='latest'
+  trigger_file = '/tmp/pgsql.trigger'
+```
 
-  # apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
-  # /etc/init.d/postgresql stop
-  # vim /etc/postgresql/9.1/main/postgresql.conf
-
-    # important options
+start postgresql server
+```
+slave1# /etc/init.d/postgresql start
+```
+and check if replication is working
+```
+slave1# ps -u postgres u
     ...
-    listen_addresses = '*'         # we want to listen on all interfaces
-    wal_level = hot_standby        # we want to allow slaves to grab data from master
-    max_wal_senders = 2            # how many "sender" processes master can run
-    wal_keep_segments = 50         # how many WAL files we want to store
-    hot_standby = on               # this one is for slaves, but could be placed on master config as well
-    ...
-
-2) add 'repl' and 'pgpool' users to pg_hba
-  # echo host replication repl 192.168.200.4/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
-  # echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
-
-
-+ add user app
-
-3) replication
-
-  # su - postgres
-  $ cd /var/lib/postgresql/9.1
-  $ mv ~/base_backup.tar .
-  $ rm -rf main/
-  $ tar -xvf base_backup.tar
-  $ mkdir main/pg_xlog
-  $ vim main/recovery.conf
-    standby_mode = 'on'
-    primary_conninfo = 'host=192.168.200.2 port=5432 user=repl password=repl'
-    restore_command = 'cp /var/lib/postgresql/9.1/archive/%f %p'
-    recovery_target_timeline='latest'
-    trigger_file = '/tmp/pgsql.trigger'
-  $
-
-
-root@slave:~# /etc/init.d/postgresql start
-
-4) # ps -u postgres u
-
     postgres: wal receiver process   streaming
-
--- SLAVE 2 --
-
-1) install and configure postgresql
-
-  # apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
-  # /etc/init.d/postgresql stop
-  # vim /etc/postgresql/9.1/main/postgresql.conf
-    # important options
     ...
-    listen_addresses = '*'
-    hot_standby = on
+```
+
+### STEP 3 - SLAVE2
+
+
+postgresql.conf
+```
+slave2# vim /etc/postgresql/9.1/main/postgresql.conf
+```
+```
+  # important options
+  ...
+  listen_addresses = '*'
+  hot_standby = on
+  ...
+```
+
+add 'pgpool' user to pg_hba.conf file
+```
+slave2# echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+```
+And like on master add your app user as well.   
+For test purpose we can add below line to pg_hba.conf file:
+```
+  host all postgres 192.168.200.5/32 trust
+```
+
+Replication:
+```
+slave2# su - postgres
+  postgres@slave2$ cd /var/lib/postgresql/9.1
+  postgres@slave2$ mv ~/base_backup.tar .
+  postgres@slave2$ rm -rf main/
+  postgres@slave2$ tar -xvf base_backup.tar
+  postgres@slave2$ mkdir main/pg_xlog
+  postgres@slave2$ vim main/recovery.conf
+```
+```
+  standby_mode = 'on'
+  primary_conninfo = 'host=192.168.200.2 port=5432 user=repl password=repl'
+  restore_command = 'cp /var/lib/postgresql/9.1/archive/%f %p'
+  recovery_target_timeline='latest'
+```
+
+start postgresql server
+```
+slave2# /etc/init.d/postgresql start
+```
+and check if replication is working
+```
+slave2# ps -u postgres u
     ...
+    postgres: wal receiver process   streaming
+    ...
+```
 
-2) add 'pgpool' users to pg_hba
-  # echo host all pgpool 192.168.200.5/32 md5 >> /etc/postgresql/9.1/main/pg_hba.conf
+### STEP 4 - APP
 
-3) replication 
+install pgpool
+```
+app# apt-get -y install pgpool2 postgresql-9.1-pgpool2                                                                                                                                                                      
+app# /etc/init.d/pgpool2 stop
+```
 
-  # su - postgres
-  $ cd /var/lib/postgresql/9.1
-  $ rm -rf main/
-  $ mv ~/base_backup.tar .
-  $ tar -xvf base_backup.tar
-  $ mkdir main/pg_xlog
-  $ vim main/recovery.conf
-
-    standby_mode = 'on'
-    primary_conninfo = 'host=192.168.200.2 port=5432 user=repl password=repl'
-    restore_command = 'cp /var/lib/postgresql/9.1/archive/%f %p'
-    recovery_target_timeline='latest'
-
-postgres@slave2:~/9.1$ /etc/init.d/postgresql start
-
-4) # ps -u postgres u
-
- postgres: wal receiver process   streaming
-
-
--- APP --
-
-1) install postgres and pgpool
-
-  # apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
-  # /etc/init.d/postgresql stop
-  # apt-get -y install pgpool2 postgresql-9.1-pgpool2                                                                                                                                                                      
-  # /etc/init.d/pgpool2 stop
-
-2) conf pgpool
-  # cd /etc/pgpool2/
-  # cp pgpool.conf{,.back}
-  # cp pcp.conf{,.back}
-  # echo pgpool:`pg_md5 pgpool` >> pcp.conf
-  # vim pgpool.conf
-
+prepare pgpool configuration
+```
+app# cd /etc/pgpool2/
+app# cp pgpool.conf{,.back}
+app# cp pcp.conf{,.back}
+app# echo pgpool:`pg_md5 pgpool` >> pcp.conf
+app# vim pgpool.conf
+```
+```
     #-------------#
     # CONNECTIONS #
     #-------------#
@@ -375,57 +458,64 @@ postgres@slave2:~/9.1$ /etc/init.d/postgresql start
     # OTHERS #
     #--------#
     relcache_expire = 0
-
+```
   
-3) add failover.sh 
+failover script
+```
+app# su - postgres
+  postgres@app$ mkdir bin
+  postgres@app$ vim bin/failover.sh
+```
+```
+  #!/bin/sh -
 
-  # su - postgres
-  $ mkdir bin
-  $ vim bin/failover.sh
-     #!/bin/sh -
+  FALLING_NODE=$1
+  OLD_MASTER=$2
+  NEW_MASTER=$3
 
-     FALLING_NODE=$1
-     OLD_MASTER=$2
-     NEW_MASTER=$3
+  SLAVE1='192.168.200.3'
+  SLAVE2='192.168.200.4'
 
-     SLAVE1='192.168.200.3'
-     SLAVE2='192.168.200.4'
+  if test $FALLING_NODE -eq 0
+  then
+    ssh -T $SLAVE1 touch /tmp/pgsql.trigger
+    ssh -T $SLAVE1 "while test ! -f /var/lib/postgresql/9.1/main/recovery.done; do sleep 1; done; scp /var/lib/postgresql/9.1/main/pg_xlog/*history* $SLAVE2:/var/lib/postgresql/9.1/main/pg_xlog/"
+    ssh -T $SLAVE2 "sed -i 's/192.168.200.2/192.168.200.3/' /var/lib/postgresql/9.1/main/recovery.conf"
+    ssh -T $SLAVE2 /etc/init.d/postgresql restart
+    /usr/sbin/pcp_attach_node 10 localhost 9898 pgpool pgpool 2
+  fi
+```
+```
+  postgres@app$ chmod u+x bin/failover.sh
+```    
 
-     if test $FALLING_NODE -eq 0
-     then
-       ssh -T $SLAVE1 touch /tmp/pgsql.trigger
-       ssh -T $SLAVE1 "while test ! -f /var/lib/postgresql/9.1/main/recovery.done; do sleep 1; done; scp /var/lib/postgresql/9.1/main/pg_xlog/*history* $SLAVE2:/var/lib/postgresql/9.1/main/pg_xlog/"
-       ssh -T $SLAVE2 "sed -i 's/192.168.200.2/192.168.200.3/' /var/lib/postgresql/9.1/main/recovery.conf"
-       ssh -T $SLAVE2 /etc/init.d/postgresql restart
-       /usr/sbin/pcp_attach_node 10 localhost 9898 pgpool pgpool 2
-     fi
-     
-  $ chmod u+x bin/failover.sh
-    
+to be sure failover will success, test scp command:
+```
+postgres@slave1$ cd
+postgres@slave1$ touch test_scp
+```
+```
+postgres@app$ scp slave1:~/test_scp slave2:~
+```
+```
+postgres@slave2$ cd
+postgres@slave2$ ls test_scp
+```
 
-3) ssh keys
-   
-   generate ssh key and add it to authorized_keys on slave1 and slave2
-     $ ssh-keygen -t rsa -b 4096
-   user postgres have to able to ssh to slave1 and 2 without password
+ok, and finally start pgpool
+```
+app# /etc/init.d/pgpool2 start
+app# pcp_node_count 10 localhost 9898 pgpool pgpool
+app# pcp_node_info 10 localhost 9898 pgpool pgpool 0
+app# pcp_node_info 10 localhost 9898 pgpool pgpool 1
+app# pcp_node_info 10 localhost 9898 pgpool pgpool 2
+```
 
-   test it:
-     $ ssh 192.168.200.3
-     $ ssh 192.168.200.4
+### ABOUT FAILOVER
+If master fails, on slave1 trigger file is created, and slave1 is promoted to be new master.
+When it happend in $PGDATA/pg_xlog/ directory file TIMELINE_ID.history (eg. '00000002.history') is created.
+That file is needed by second slave to change 'TIMELINE ID' and to start replicate data from new master.
 
-
-IMPORTANT THING! ssh z roznych na rozne chosty trzeba
-so be sure you can run on app host scp
-
-  scp slave1:/sadasd/ slave2:/asdsad
-
-4) start pgpool
-# /etc/init.d/pgpool2 start
-
-5) test pgpool
-
-# pcp_node_count 10 localhost 9898 pgpool pgpool
-# pcp_node_info 10 localhost 9898 pgpool pgpool 0
-# pcp_node_info 10 localhost 9898 pgpool pgpool 1
-# pcp_node_info 10 localhost 9898 pgpool pgpool 2
-
+### REFERENCES
+* http://www.postgresql.org/docs/9.1/static/high-availability.html
+* http://www.pgpool.net/docs/latest/pgpool-en.html
