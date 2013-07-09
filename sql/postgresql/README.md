@@ -514,9 +514,38 @@ app# pcp_node_info 10 localhost 9898 pgpool pgpool 2
 
 ### STEP 5 - TEST:)
 prepare test database
-stop server on master 
-test failover
+```
+root@app:~# su - postgres
+postgres@app:~$ psql -c "CREATE DATABASE testdb1;"
+CREATE DATABASE
+postgres@app:~$ psql -d testdb1 -c "CREATE TABLE testtable1 (i int);"
+CREATE TABLE
+postgres@app:~$ psql -d testdb1 -c "INSERT INTO testtable1 values (0);"
+INSERT 0 1
+postgres@app:~$ psql -d testdb1 -c "SELECT * from testtable1;"
+ i
+---
+ 0
+(1 row)
+```
 
+stop server on master
+```
+root@master:~# /etc/init.d/postgresql stop
+ * Stopping PostgreSQL 9.1 database server
+   ...done.
+```
+test failover
+```
+postgres@app:~$ psql -d testdb1 -c "INSERT INTO testtable1 values (1);"
+INSERT 0 1
+postgres@app:~$ psql -d testdb1 -c "SELECT * from testtable1;"
+ i
+---
+ 0
+ 1
+(2 rows)
+```
 
 
 ### ABOUT FAILOVER
