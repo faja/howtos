@@ -7,7 +7,7 @@ In this manual i use ubuntu 12.04, postgres-9.1 and pgpool2-3.1
 
 Hosts:
  * master  192.168.200.2
- * slave   192.168.200.3
+ * slave1  192.168.200.3
  * slave2  192.168.200.4
  * app     192.168.200.5
 
@@ -17,6 +17,8 @@ Users:
  * pgpool - db user for pgpool checks
 
 
+
+Diagram:
 ```
   .-----.                  .--------.
   |     |           W      |   DB   |
@@ -35,8 +37,7 @@ Users:
                            `--------`
 ```
 
-
-AFTER FAILOVER
+after failover
 
 ```
   .-----.                  .--------.
@@ -64,7 +65,6 @@ User 'postgres' have to be able to ssh:
 * from app to slave2
 * from slave1 to slave2
 * from master to slave1 and slave2 (optionally, to copy base_backup.tar)
-it is very important!
 
 ```
 master# apt-get -y install postgresql-9.1 postgresql-server-dev-9.1
